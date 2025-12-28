@@ -5,6 +5,7 @@ import json
 import threading
 import time
 import socket
+import shutil
 
 # --- AUTO INSTALL DEPENDENCIES ---
 def ensure_library(package_name, import_name=None):
@@ -98,8 +99,9 @@ def apply_pitch_shift(file_path, pitch_octaves, electron_log_func):
 
 # --- LOGIC XỬ LÝ (VOICEVOX) ---
 class VoicevoxLogic:
-    def __init__(self, api_url="http://127.0.0.1:50021"):
+    def __init__(self, api_url="http://127.0.0.1:50021", engine_path=None):
         self.api_url = api_url
+        self.engine_path = engine_path
         self.session = requests.Session() # Tối ưu: Tái sử dụng connection
 
     def check_connection(self):
@@ -112,58 +114,53 @@ class VoicevoxLogic:
 
     def tts_request(self, text, speaker_id):
         """Gửi lệnh đọc tới VOICEVOX Engine với cơ chế retry và timeout dài hơn."""
-        max_retries = 3
-
-        # 1. Tạo audio query với retry
-        audio_query = None
-        for attempt in range(max_retries):
+        headers = {"Connection": "close"}
+        timeout = 120
+        
+        while True:
             try:
+                # 1. Tạo audio query
                 query_payload = {"text": text, "speaker": speaker_id}
-                # Yêu cầu 1: Tăng timeout. Dùng session theo yêu cầu 3.
                 query_response = self.session.post(
                     f"{self.api_url}/audio_query",
                     params=query_payload,
-                    timeout=60
+                    headers=headers,
+                    timeout=timeout
                 )
                 query_response.raise_for_status()  # Tự động raise lỗi nếu status code là 4xx hoặc 5xx
                 audio_query = query_response.json()
-                break  # Thoát vòng lặp nếu thành công
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                # Yêu cầu 2: Log và thử lại
-                if attempt < max_retries - 1:
-                    print(f"Request timeout/lỗi (audio_query), đang thử lại lần {attempt + 1}/{max_retries}... Lỗi: {e}")
-                    time.sleep(2)
-                else:
-                    raise Exception(f"Lỗi audio_query sau {max_retries} lần thử: {e}")
-            except requests.exceptions.RequestException as e:
-                status_code = e.response.status_code if e.response is not None else "N/A"
-                raise Exception(f"Lỗi audio_query (Code {status_code}): {e}")
 
-        if audio_query is None:
-            raise Exception("Không thể tạo audio_query sau nhiều lần thử.")
-
-        # 2. Tổng hợp âm thanh với retry
-        for attempt in range(max_retries):
-            try:
+                # 2. Tổng hợp âm thanh
                 synth_response = self.session.post(
                     f"{self.api_url}/synthesis",
                     params={"speaker": speaker_id},
                     json=audio_query,
-                    timeout=60  # Đảm bảo timeout đủ dài
+                    headers=headers,
+                    timeout=timeout
                 )
                 synth_response.raise_for_status()
                 return synth_response.content
-            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-                if attempt < max_retries - 1:
-                    print(f"Request timeout/lỗi (synthesis), đang thử lại lần {attempt + 1}/{max_retries}... Lỗi: {e}")
-                    time.sleep(2)
-                else:
-                    raise Exception(f"Lỗi synthesis sau {max_retries} lần thử: {e}")
-            except requests.exceptions.RequestException as e:
-                status_code = e.response.status_code if e.response is not None else "N/A"
-                raise Exception(f"Lỗi synthesis (Code {status_code}): {e}")
 
-        raise Exception(f"Không thể tổng hợp âm thanh sau {max_retries} lần thử.")
+            except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError, requests.exceptions.ChunkedEncodingError) as e:
+                print(f"Engine treo ở câu (request lỗi): {e}. Đang Reset...")
+                
+                # Kill run.exe
+                try:
+                    subprocess.run(["taskkill", "/F", "/IM", "run.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except:
+                    pass
+                
+                # Start run.exe
+                if self.engine_path and os.path.exists(self.engine_path):
+                    subprocess.Popen([self.engine_path], cwd=os.path.dirname(self.engine_path))
+                    time.sleep(15)
+                else:
+                    raise Exception(f"Lỗi kết nối và không có đường dẫn Engine để khởi động lại. Lỗi: {e}")
+                
+                print("Đã khởi động lại Engine. Đang thử lại...")
+                continue
+            except Exception as e:
+                raise e
 
     def process_srt(self, srt_path, output_path, speaker_id, format="wav", progress_callback=None):
         subs = pysrt.open(srt_path)
@@ -214,15 +211,35 @@ class VoicevoxLogic:
         # (?<=...) là lookbehind assertion để giữ lại dấu câu
         sentences = [s.strip() for s in re.split(r'(?<=[。！？\n,、.?!])', text) if s.strip()]
         
-        combined_audio = AudioSegment.empty()
+        # Create segments directory
+        segments_dir = os.path.splitext(output_path)[0] + "_segments"
+        if not os.path.exists(segments_dir):
+            os.makedirs(segments_dir)
+            
+        segment_files = []
         total = len(sentences)
 
+        # Giai đoạn 1: Sinh file lẻ
         for i, sentence in enumerate(sentences):
+            filename = f"{i:04d}.wav"
+            filepath = os.path.join(segments_dir, filename)
+            segment_files.append(filepath)
+
             if progress_callback:
                 progress_callback(f"Đang xử lý câu {i+1}/{total}: {sentence[:30]}...", percent=round(((i+1)/total)*100))
 
+            # Smart Resume
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                print(f"File {filename} đã tồn tại -> Bỏ qua")
+                continue
+
             try:
-                # Logic chèn silence (Tương tự GSpeech)
+                audio_data = self.tts_request(sentence, speaker_id)
+                
+                with open(filepath, "wb") as f:
+                    f.write(audio_data)
+                
+                # Logic chèn silence (Prepend silence based on previous sentence)
                 if i > 0 and pause_config:
                     prev_sentence = sentences[i-1]
                     if prev_sentence:
@@ -236,29 +253,70 @@ class VoicevoxLogic:
                             pause_ms = float(pause_config.get('exclamation', 0)) * 1000
                         
                         if pause_ms > 0:
-                            combined_audio += AudioSegment.silent(duration=pause_ms)
+                            sound = AudioSegment.from_wav(filepath)
+                            silence = AudioSegment.silent(duration=pause_ms)
+                            sound = silence + sound
+                            sound.export(filepath, format="wav")
 
-                audio_data = self.tts_request(sentence, speaker_id)
-                
-                # Rate limiting to prevent timeout/overload
-                time.sleep(0.2)
-
-                temp_file = f"temp_voicevox_txt_{i}.wav"
-                with open(temp_file, "wb") as f:
-                    f.write(audio_data)
-                
-                segment = AudioSegment.from_wav(temp_file)
-                os.remove(temp_file)
-                
-                combined_audio += segment
+                # Performance sleep
+                time.sleep(1.0)
                 
             except Exception as e:
                 print(f"Lỗi câu {i+1}: {e}")
         
+        # Giai đoạn 2: Merge using ffmpeg
+        if progress_callback: progress_callback("Đang ghép nối file (FFmpeg)...")
+        
+        list_path = os.path.join(segments_dir, "files.txt")
+        with open(list_path, "w", encoding="utf-8") as f:
+            for path in segment_files:
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    # Fix: Replace backslash with forward slash for FFmpeg and use correct newline
+                    abs_path = os.path.abspath(path).replace("\\", "/")
+                    f.write(f"file '{abs_path}'\n")
+        
+        temp_output_wav = output_path
+        if format == "mp3":
+            temp_output_wav = os.path.splitext(output_path)[0] + ".temp.wav"
+
+        try:
+            cmd = [
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", list_path,
+                "-c", "copy",
+                temp_output_wav
+            ]
+            
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
+            subprocess.check_call(cmd, startupinfo=startupinfo)
+            
+            if format == "mp3":
+                sound = AudioSegment.from_wav(temp_output_wav)
+                sound.export(output_path, format="mp3", bitrate="192k")
+                if os.path.exists(temp_output_wav):
+                    os.remove(temp_output_wav)
+            
+            # Cleanup
+            try:
+                shutil.rmtree(segments_dir)
+            except:
+                pass
+                
+        except Exception as e:
+            print(f"Lỗi ghép file: {e}")
+            if progress_callback: progress_callback(f"Lỗi ghép file: {e}")
+
+        # Old code removed
+        """
         if format == "mp3":
             combined_audio.export(output_path, format="mp3", bitrate="192k")
         else:
             combined_audio.export(output_path, format="wav")
+        """
 
 # --- LOGIC XỬ LÝ (KẾT NỐI GPT-SOVITS) ---
 class DVMakerLogic:
@@ -916,7 +974,9 @@ if __name__ == "__main__":
 
             # --- JP VOICE (VOICEVOX) TASK ---
             if task == 'jp-voice':
-                logic = VoicevoxLogic()
+                engine_path = params.get('enginePath')
+                api_url = params.get('apiUrl', "http://127.0.0.1:50021")
+                logic = VoicevoxLogic(api_url=api_url, engine_path=engine_path)
                 speaker_id = params['speakerId'] # Frontend will send speakerId
                 
                 # NEW: Get pause config for JP Voice

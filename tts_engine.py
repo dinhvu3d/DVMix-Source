@@ -162,6 +162,12 @@ class VoicevoxLogic:
             except Exception as e:
                 raise e
 
+    def format_srt_time(self, ms):
+        seconds, milliseconds = divmod(ms, 1000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{int(milliseconds):03d}"
+
     def process_srt(self, srt_path, output_path, speaker_id, format="wav", progress_callback=None):
         subs = pysrt.open(srt_path)
         combined_audio = AudioSegment.silent(duration=0)
@@ -219,6 +225,10 @@ class VoicevoxLogic:
         segment_files = []
         total = len(sentences)
 
+        # Biến cho SRT
+        srt_entries = []
+        current_timestamp = 0
+
         # Giai đoạn 1: Sinh file lẻ
         for i, sentence in enumerate(sentences):
             filename = f"{i:04d}.wav"
@@ -231,6 +241,15 @@ class VoicevoxLogic:
             # Smart Resume
             if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                 print(f"File {filename} đã tồn tại -> Bỏ qua")
+                try:
+                    sound = AudioSegment.from_file(filepath)
+                    duration = len(sound)
+                    start_time = self.format_srt_time(current_timestamp)
+                    end_time = self.format_srt_time(current_timestamp + duration)
+                    srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
+                    current_timestamp += duration
+                except:
+                    pass
                 continue
 
             try:
@@ -258,6 +277,14 @@ class VoicevoxLogic:
                             sound = silence + sound
                             sound.export(filepath, format="wav")
 
+                # Tính toán thời gian cho SRT
+                sound = AudioSegment.from_file(filepath)
+                duration = len(sound)
+                start_time = self.format_srt_time(current_timestamp)
+                end_time = self.format_srt_time(current_timestamp + duration)
+                srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
+                current_timestamp += duration
+
                 # Performance sleep
                 time.sleep(1.0)
                 
@@ -266,6 +293,14 @@ class VoicevoxLogic:
         
         # Giai đoạn 2: Merge using ffmpeg
         if progress_callback: progress_callback("Đang ghép nối file (FFmpeg)...")
+        
+        # Lưu file SRT
+        try:
+            srt_output_path = os.path.splitext(output_path)[0] + ".srt"
+            with open(srt_output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(srt_entries))
+        except Exception as e:
+            print(f"Lỗi lưu file SRT: {e}")
         
         list_path = os.path.join(segments_dir, "files.txt")
         with open(list_path, "w", encoding="utf-8") as f:

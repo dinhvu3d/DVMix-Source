@@ -1076,7 +1076,8 @@ const JPVoiceTab = () => {
 
     const handleStopEngine = async () => {
         setLogs(p => [">>> Stopping VOICEVOX Engine...", ...p]);
-        await window.electronAPI.stopJPVoiceEngine();
+        const res = await window.electronAPI.stopJPVoiceEngine();
+        if (res.success) setIsEngineRunning(false);
     };
 
     const fetchSpeakers = async () => {

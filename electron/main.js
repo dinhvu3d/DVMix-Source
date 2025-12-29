@@ -1131,6 +1131,9 @@ ipcMain.handle('jp-voice:start-engine', async (e, enginePath) => {
 });
 
 ipcMain.handle('jp-voice:stop-engine', async () => {
+    // Force UI update regardless of process state
+    if(mainWindow) mainWindow.webContents.send('jp-voice-status', { isRunning: false });
+
     if (voicevoxProcess) {
         try {
             // Dùng taskkill trên Windows để đảm bảo kill sạch cả process con (Tree)
@@ -1141,7 +1144,6 @@ ipcMain.handle('jp-voice:stop-engine', async () => {
             }
             voicevoxProcess = null;
             sendLog('[JPVOICE] Engine stopped.');
-            if(mainWindow) mainWindow.webContents.send('jp-voice-status', { isRunning: false });
             return { success: true };
         } catch (e) {
             return { success: false, message: e.message };

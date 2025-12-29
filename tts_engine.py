@@ -104,6 +104,12 @@ class VoicevoxLogic:
         self.engine_path = engine_path
         self.session = requests.Session() # Tối ưu: Tái sử dụng connection
 
+    def format_srt_time(self, ms):
+        seconds, milliseconds = divmod(ms, 1000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{int(milliseconds):03d}"
+
     def check_connection(self):
         """Kiểm tra xem VOICEVOX Engine có đang bật không"""
         try:
@@ -161,12 +167,6 @@ class VoicevoxLogic:
                 continue
             except Exception as e:
                 raise e
-
-    def format_srt_time(self, ms):
-        seconds, milliseconds = divmod(ms, 1000)
-        minutes, seconds = divmod(seconds, 60)
-        hours, minutes = divmod(minutes, 60)
-        return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{int(milliseconds):03d}"
 
     def process_srt(self, srt_path, output_path, speaker_id, format="wav", progress_callback=None):
         subs = pysrt.open(srt_path)
@@ -248,8 +248,8 @@ class VoicevoxLogic:
                     end_time = self.format_srt_time(current_timestamp + duration)
                     srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
                     current_timestamp += duration
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Lỗi tính duration cho file {filename}: {e}")
                 continue
 
             try:
@@ -276,8 +276,8 @@ class VoicevoxLogic:
                             silence = AudioSegment.silent(duration=pause_ms)
                             sound = silence + sound
                             sound.export(filepath, format="wav")
-
-                # Tính toán thời gian cho SRT
+                
+                # Tính toán SRT cho file vừa tạo
                 sound = AudioSegment.from_file(filepath)
                 duration = len(sound)
                 start_time = self.format_srt_time(current_timestamp)
@@ -407,6 +407,12 @@ class DVMakerLogic:
         except Exception as e:
             raise e
 
+    def format_srt_time(self, ms):
+        seconds, milliseconds = divmod(ms, 1000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{int(milliseconds):03d}"
+
     def process_srt(self, srt_path, output_path, ref_audio, ref_text, ref_lang, target_lang, speed=1.0, format="wav", progress_callback=None):
         subs = pysrt.open(srt_path)
         combined_audio = AudioSegment.silent(duration=0)
@@ -462,10 +468,14 @@ class DVMakerLogic:
         combined_audio = AudioSegment.empty()
         total = len(sentences)
 
+        # Biến cho SRT
+        srt_entries = []
+
         for i, sentence in enumerate(sentences):
             if progress_callback:
                 progress_callback(f"Đang xử lý câu {i+1}/{total}: {sentence[:30]}...", percent=round(((i+1)/total)*100))
 
+            start_ms = len(combined_audio)
             try:
                 # Logic chèn silence dựa trên câu trước đó
                 if i > 0 and pause_config:
@@ -496,11 +506,25 @@ class DVMakerLogic:
                 
                 combined_audio += segment
                 
+                # Tính toán thời gian cho SRT
+                end_ms = len(combined_audio)
+                start_time = self.format_srt_time(start_ms)
+                end_time = self.format_srt_time(end_ms)
+                srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
+
             except Exception as e:
                 if progress_callback:
                     progress_callback(f"Lỗi câu {i+1}: {e}")
                 print(f"Error sentence {i}: {e}")
         
+        # Lưu file SRT
+        try:
+            srt_output_path = os.path.splitext(output_path)[0] + ".srt"
+            with open(srt_output_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(srt_entries))
+        except Exception as e:
+            print(f"Lỗi lưu file SRT: {e}")
+
         if format == "mp3":
             combined_audio.export(output_path, format="mp3", bitrate="192k")
         else:

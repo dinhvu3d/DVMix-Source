@@ -118,7 +118,7 @@ class VoicevoxLogic:
         except requests.exceptions.RequestException:
             return False
 
-    def tts_request(self, text, speaker_id):
+    def tts_request(self, text, speaker_id, speed=1.0, pitch=0.0):
         """Gửi lệnh đọc tới VOICEVOX Engine với cơ chế retry và timeout dài hơn."""
         headers = {"Connection": "close"}
         timeout = 120
@@ -135,6 +135,8 @@ class VoicevoxLogic:
                 )
                 query_response.raise_for_status()  # Tự động raise lỗi nếu status code là 4xx hoặc 5xx
                 audio_query = query_response.json()
+                audio_query['speedScale'] = speed
+                audio_query['pitchScale'] = pitch
 
                 # 2. Tổng hợp âm thanh
                 synth_response = self.session.post(
@@ -209,7 +211,7 @@ class VoicevoxLogic:
         else:
             combined_audio.export(output_path, format="wav")
 
-    def process_txt(self, txt_path, output_path, speaker_id, format="wav", progress_callback=None, pause_config=None):
+    def process_txt(self, txt_path, output_path, speaker_id, speed=1.0, pitch=0.0, format="wav", progress_callback=None, pause_config=None):
         with open(txt_path, 'r', encoding='utf-8') as f:
             text = f.read()
 
@@ -238,13 +240,26 @@ class VoicevoxLogic:
             if progress_callback:
                 progress_callback(f"Đang xử lý câu {i+1}/{total}: {sentence[:30]}...", percent=round(((i+1)/total)*100))
 
+            # Tính toán pause_ms trước để dùng cho cả Smart Resume và New Gen
+            pause_ms = 0
+            if i > 0 and pause_config:
+                prev_sentence = sentences[i-1]
+                if prev_sentence:
+                    last_char = prev_sentence.strip()[-1]
+                    if last_char in [',', '、']:
+                        pause_ms = float(pause_config.get('comma', 0)) * 1000
+                    elif last_char in ['.', '。']:
+                        pause_ms = float(pause_config.get('period', 0)) * 1000
+                    elif last_char in ['!', '！', '?', '？']:
+                        pause_ms = float(pause_config.get('exclamation', 0)) * 1000
+
             # Smart Resume
             if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
                 print(f"File {filename} đã tồn tại -> Bỏ qua")
                 try:
                     sound = AudioSegment.from_file(filepath)
                     duration = len(sound)
-                    start_time = self.format_srt_time(current_timestamp)
+                    start_time = self.format_srt_time(current_timestamp + pause_ms)
                     end_time = self.format_srt_time(current_timestamp + duration)
                     srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
                     current_timestamp += duration
@@ -253,34 +268,22 @@ class VoicevoxLogic:
                 continue
 
             try:
-                audio_data = self.tts_request(sentence, speaker_id)
+                audio_data = self.tts_request(sentence, speaker_id, speed=speed, pitch=pitch)
                 
                 with open(filepath, "wb") as f:
                     f.write(audio_data)
                 
                 # Logic chèn silence (Prepend silence based on previous sentence)
-                if i > 0 and pause_config:
-                    prev_sentence = sentences[i-1]
-                    if prev_sentence:
-                        last_char = prev_sentence.strip()[-1]
-                        pause_ms = 0
-                        if last_char in [',', '、']:
-                            pause_ms = float(pause_config.get('comma', 0)) * 1000
-                        elif last_char in ['.', '。']:
-                            pause_ms = float(pause_config.get('period', 0)) * 1000
-                        elif last_char in ['!', '！', '?', '？']:
-                            pause_ms = float(pause_config.get('exclamation', 0)) * 1000
-                        
-                        if pause_ms > 0:
-                            sound = AudioSegment.from_wav(filepath)
-                            silence = AudioSegment.silent(duration=pause_ms)
-                            sound = silence + sound
-                            sound.export(filepath, format="wav")
+                if pause_ms > 0:
+                    sound = AudioSegment.from_wav(filepath)
+                    silence = AudioSegment.silent(duration=pause_ms)
+                    sound = silence + sound
+                    sound.export(filepath, format="wav")
                 
                 # Tính toán SRT cho file vừa tạo
                 sound = AudioSegment.from_file(filepath)
                 duration = len(sound)
-                start_time = self.format_srt_time(current_timestamp)
+                start_time = self.format_srt_time(current_timestamp + pause_ms)
                 end_time = self.format_srt_time(current_timestamp + duration)
                 srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
                 current_timestamp += duration
@@ -457,78 +460,138 @@ class DVMakerLogic:
         else:
             combined_audio.export(output_path, format="wav")
 
-    def process_txt(self, txt_path, output_path, ref_audio, ref_text, ref_lang, target_lang, speed=1.0, format="wav", progress_callback=None, pause_config=None):
+    def process_txt(self, txt_path, output_path, ref_audio, ref_text, ref_lang, target_lang, speed=1.0, pitch=0.0, format="wav", progress_callback=None, pause_config=None):
         with open(txt_path, 'r', encoding='utf-8') as f:
             text = f.read()
 
         # Tách câu dựa trên dấu câu phổ biến (Việt/Anh/Trung/Nhật)
         # Giữ lại dấu câu để kiểm tra logic pause
         sentences = [s.strip() for s in re.split(r'(?<=[.?!,;。！？\n])', text) if s.strip()]
-        
-        combined_audio = AudioSegment.empty()
+
+        # Create segments directory
+        segments_dir = os.path.splitext(output_path)[0] + "_segments"
+        if not os.path.exists(segments_dir):
+            os.makedirs(segments_dir)
+            
+        segment_files = []
         total = len(sentences)
 
         # Biến cho SRT
         srt_entries = []
+        current_timestamp = 0
 
         for i, sentence in enumerate(sentences):
+            filename = f"{i:04d}.wav"
+            filepath = os.path.join(segments_dir, filename)
+            segment_files.append(filepath)
+
             if progress_callback:
                 progress_callback(f"Đang xử lý câu {i+1}/{total}: {sentence[:30]}...", percent=round(((i+1)/total)*100))
 
-            start_ms = len(combined_audio)
-            try:
-                # Logic chèn silence dựa trên câu trước đó
-                if i > 0 and pause_config:
-                    prev_sentence = sentences[i-1]
-                    if prev_sentence:
-                        last_char = prev_sentence.strip()[-1]
-                        pause_ms = 0
-                        
-                        if last_char in [',', ';', '、']:
-                            pause_ms = float(pause_config.get('comma', 0)) * 1000
-                        elif last_char in ['.', '。']:
-                            pause_ms = float(pause_config.get('period', 0)) * 1000
-                        elif last_char in ['!', '?', '！', '？']:
-                            pause_ms = float(pause_config.get('exclamation', 0)) * 1000
-                        
-                        if pause_ms > 0:
-                            combined_audio += AudioSegment.silent(duration=pause_ms)
+            # Tính toán pause_ms trước để dùng cho cả Smart Resume và New Gen
+            pause_ms = 0
+            if i > 0 and pause_config:
+                prev_sentence = sentences[i-1]
+                if prev_sentence:
+                    last_char = prev_sentence.strip()[-1]
+                    if last_char in [',', ';', '、']:
+                        pause_ms = float(pause_config.get('comma', 0)) * 1000
+                    elif last_char in ['.', '。']:
+                        pause_ms = float(pause_config.get('period', 0)) * 1000
+                    elif last_char in ['!', '?', '！', '？']:
+                        pause_ms = float(pause_config.get('exclamation', 0)) * 1000
 
+            # Smart Resume
+            if os.path.exists(filepath) and os.path.getsize(filepath) > 0:
+                print(f"File {filename} đã tồn tại -> Bỏ qua")
+                try:
+                    sound = AudioSegment.from_file(filepath)
+                    duration = len(sound)
+                    start_time = self.format_srt_time(current_timestamp + pause_ms)
+                    end_time = self.format_srt_time(current_timestamp + duration)
+                    srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
+                    current_timestamp += duration
+                except Exception as e:
+                    print(f"Lỗi tính duration cho file {filename}: {e}")
+                continue
+
+            try:
                 audio_data = self.tts_request(sentence, ref_audio, ref_text, ref_lang, target_lang, speed=speed)
                 
-                # Dùng file tạm để load vào pydub (tránh lỗi định dạng raw bytes)
-                temp_file = f"temp_gpt_{i}.wav"
-                with open(temp_file, "wb") as f:
+                # Lưu file audio thô vào đúng đường dẫn segment
+                with open(filepath, "wb") as f:
                     f.write(audio_data)
                 
-                segment = AudioSegment.from_wav(temp_file)
-                os.remove(temp_file)
+                sound = AudioSegment.from_wav(filepath)
                 
-                combined_audio += segment
+                # Áp dụng Pitch
+                if pitch != 0.0:
+                    new_sample_rate = int(sound.frame_rate * (2.0 ** pitch))
+                    sound = sound._spawn(sound.raw_data, overrides={'frame_rate': new_sample_rate})
+
+                # Chèn khoảng lặng vào đầu
+                if pause_ms > 0:
+                    silence = AudioSegment.silent(duration=pause_ms)
+                    sound = silence + sound
+                
+                # Xuất ra file segment cuối cùng (ghi đè file thô)
+                sound.export(filepath, format="wav")
                 
                 # Tính toán thời gian cho SRT
-                end_ms = len(combined_audio)
-                start_time = self.format_srt_time(start_ms)
-                end_time = self.format_srt_time(end_ms)
+                duration = len(sound)
+                start_time = self.format_srt_time(current_timestamp + pause_ms)
+                end_time = self.format_srt_time(current_timestamp + duration)
                 srt_entries.append(f"{len(srt_entries) + 1}\n{start_time} --> {end_time}\n{sentence}\n")
+                current_timestamp += duration
 
             except Exception as e:
                 if progress_callback:
                     progress_callback(f"Lỗi câu {i+1}: {e}")
                 print(f"Error sentence {i}: {e}")
         
-        # Lưu file SRT
+        # Giai đoạn 2: Lưu SRT và ghép nối
         try:
             srt_output_path = os.path.splitext(output_path)[0] + ".srt"
             with open(srt_output_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(srt_entries))
         except Exception as e:
             print(f"Lỗi lưu file SRT: {e}")
-
+        
+        if progress_callback: progress_callback("Đang ghép nối file (FFmpeg)...")
+        
+        list_path = os.path.join(segments_dir, "files.txt")
+        with open(list_path, "w", encoding="utf-8") as f:
+            for path in segment_files:
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    abs_path = os.path.abspath(path).replace("\\", "/")
+                    f.write(f"file '{abs_path}'\n")
+        
+        temp_output_wav = output_path
         if format == "mp3":
-            combined_audio.export(output_path, format="mp3", bitrate="192k")
-        else:
-            combined_audio.export(output_path, format="wav")
+            temp_output_wav = os.path.splitext(output_path)[0] + ".temp.wav"
+
+        try:
+            cmd = ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", temp_output_wav]
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            subprocess.check_call(cmd, startupinfo=startupinfo)
+            
+            if format == "mp3":
+                sound = AudioSegment.from_wav(temp_output_wav)
+                sound.export(output_path, format="mp3", bitrate="192k")
+                if os.path.exists(temp_output_wav):
+                    os.remove(temp_output_wav)
+            
+            try:
+                shutil.rmtree(segments_dir)
+            except:
+                pass
+        except Exception as e:
+            print(f"Lỗi ghép file: {e}")
+            if progress_callback: progress_callback(f"Lỗi ghép file: {e}")
+
 
 # --- LOGIC XỬ LÝ (FISH SPEECH) ---
 class FishSpeechLogic:
@@ -1037,6 +1100,8 @@ if __name__ == "__main__":
                 api_url = params.get('apiUrl', "http://127.0.0.1:50021")
                 logic = VoicevoxLogic(api_url=api_url, engine_path=engine_path)
                 speaker_id = params['speakerId'] # Frontend will send speakerId
+                speed = params.get('speed', 1.0)
+                pitch = params.get('pitch', 0.0)
                 
                 # NEW: Get pause config for JP Voice
                 pause_config = {
@@ -1055,7 +1120,7 @@ if __name__ == "__main__":
                 else: # TXT file
                     logic.process_txt(
                         str(input_path), str(output_file), speaker_id,
-                        format=out_format, progress_callback=electron_log,
+                        speed=speed, pitch=pitch, format=out_format, progress_callback=electron_log,
                         pause_config=pause_config
                     )
 
@@ -1124,14 +1189,10 @@ if __name__ == "__main__":
                     logic.process_txt(
                         str(input_path), str(output_file), 
                         params['refAudio'], params['refText'], 
-                        params['refLang'], params['targetLang'], speed=speed,
+                        params['refLang'], params['targetLang'], speed=speed, pitch=pitch,
                         format=out_format, progress_callback=electron_log,
                         pause_config=pause_config
                     )
-            
-            # Áp dụng Pitch Shift (nếu có) cho GSpeech và JPVoice
-            if task in ['gpt-sovits', 'jp-voice'] and params.get('pitch', 0.0) != 0.0:
-                apply_pitch_shift(str(output_file), params.get('pitch', 0.0), electron_log)
 
             # Gửi tin nhắn DONE
             print(json.dumps({"type": "done", "message": f"Thành công! File: {output_file.absolute()}"}), flush=True)

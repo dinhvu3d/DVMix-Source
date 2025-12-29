@@ -1508,7 +1508,7 @@ const SettingsTab = () => {
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <span className="text-[10px] text-gray-500 block uppercase font-bold">Version:</span>
-                                <span className="text-sm font-bold">v1.0.4</span>
+                                <span className="text-sm font-bold">v1.0.5</span>
                             </div>
                             <div>
                                 <span className="text-[10px] text-gray-500 block uppercase font-bold">Engine Status:</span>

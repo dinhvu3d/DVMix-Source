@@ -374,6 +374,14 @@ class DVMakerLogic:
         except:
             return False
 
+    def set_models(self, gpt_path, sovits_path):
+        try:
+            # Gọi API để cập nhật weights cho GPT và SoVITS
+            requests.get(f"{self.api_url}/set_gpt_weights", params={"weights_path": gpt_path}, timeout=30)
+            requests.get(f"{self.api_url}/set_sovits_weights", params={"weights_path": sovits_path}, timeout=30)
+        except Exception as e:
+            raise Exception(f"Lỗi khi đổi Model: {e}")
+
     def tts_request(self, text, ref_audio, ref_text, ref_lang, target_lang, speed=1.0):
         """
         Gửi lệnh đọc tới GPT-SoVITS.
@@ -1165,6 +1173,11 @@ if __name__ == "__main__":
                 logic = DVMakerLogic(params['apiUrl'])
                 speed = params.get('speed', 1.0)
                 pitch = params.get('pitch', 0.0)
+                
+                # Cập nhật Model nếu có tham số truyền vào
+                if params.get('gptModel') and params.get('sovitsModel'):
+                    electron_log(f"Đang chuyển đổi Model...")
+                    logic.set_models(params['gptModel'], params['sovitsModel'])
                 
                 # Lấy cấu hình pause
                 pause_config = {

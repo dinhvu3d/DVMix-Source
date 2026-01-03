@@ -25,9 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFonts: () => ipcRenderer.invoke('system:getFonts'),
 
   // DIALOGS
-  openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
-  openFile: (filters) => ipcRenderer.invoke('dialog:openFile', filters),
-  saveFile: () => ipcRenderer.invoke('dialog:saveFile'),
+  openDirectory: (defaultPath) => ipcRenderer.invoke('dialog:openDirectory', defaultPath),
+  openFile: (filters, defaultPath) => ipcRenderer.invoke('dialog:openFile', { filters, defaultPath }),
+  saveFile: (defaultPath, filters) => ipcRenderer.invoke('dialog:saveFile', { defaultPath, filters }),
 
   // TOOLS
   rename: (args) => ipcRenderer.invoke('backend:rename', args),

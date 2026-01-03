@@ -15,8 +15,8 @@ const PathInput = ({ label, placeholder, value, onChange, isFile = false, isSave
     const handleSelect = async () => { 
         if(window.electronAPI) { 
             let path;
-            if (isSave) path = await window.electronAPI.saveFile(isSave); 
-            else path = isFile ? await window.electronAPI.openFile(filters) : await window.electronAPI.openDirectory(); 
+            if (isSave) path = await window.electronAPI.saveFile(value); 
+            else path = isFile ? await window.electronAPI.openFile(filters, value) : await window.electronAPI.openDirectory(value); 
             if(path) onChange(path); 
         } 
     };
@@ -202,9 +202,9 @@ const Convert9to16Tab = () => {
         if(window.electronAPI) { 
             let filePath;
             if (mode === 'folder') {
-                filePath = await window.electronAPI.openDirectory();
+                filePath = await window.electronAPI.openDirectory(outputFile);
             } else {
-                filePath = await window.electronAPI.saveFile();
+                filePath = await window.electronAPI.saveFile(outputFile);
             }
             if(filePath) setOutputFile(filePath); 
         } 
@@ -332,7 +332,7 @@ const MixVideoTab = () => {
 
     const handleSelectOutput = async () => { 
         if(window.electronAPI) { 
-            const filePath = await window.electronAPI.saveFile(); 
+            const filePath = await window.electronAPI.saveFile(paths.output); 
             if(filePath) setPaths(p => ({...p, output: filePath})); 
         } 
     };
@@ -566,7 +566,7 @@ const SyncVideoTab = () => {
     const handleSetInput = (key, value) => setInputs(prev => ({ ...prev, [key]: value }));
     const handleSelectOutput = async () => {
         if (window.electronAPI) {
-            const path = await window.electronAPI.saveFile();
+            const path = await window.electronAPI.saveFile(inputs.outputPath);
             if (path) handleSetInput('outputPath', path);
         }
     };
@@ -726,6 +726,7 @@ const TTSTab = () => {
                 inputPath: '', outputFolder: '', format: 'wav', outputFilename: '',
                 speed: 1.0,
                 pitch: 0.0,
+                gptModel: '', sovitsModel: '',
                 pauseComma: 0,
                 pausePeriod: 0,
                 pauseExclamation: 0
@@ -735,6 +736,7 @@ const TTSTab = () => {
             return { 
                 apiUrl: 'http://127.0.0.1:9880', refAudio: '', refText: '', refLang: 'vi', targetLang: 'vi', 
                 inputPath: '', outputFolder: '', format: 'wav', outputFilename: '', speed: 1.0, pitch: 0.0,
+                gptModel: '', sovitsModel: '',
                 pauseComma: 0,
                 pausePeriod: 0,
                 pauseExclamation: 0
@@ -805,6 +807,8 @@ const TTSTab = () => {
 
     const handleStart = async () => {
         if (!isConnected) return alert("Vui lòng kết nối API Server trước!");
+        if (!config.gptModel) return alert("Vui lòng chọn GPT Model (.ckpt)!");
+        if (!config.sovitsModel) return alert("Vui lòng chọn SoVITS Model (.pth)!");
         if (!config.refAudio) return alert("Chưa chọn File Giọng Mẫu!");
         if (!config.refText || !config.refText.trim()) return alert("Chưa nhập Nội dung giọng mẫu!");
         if (!config.inputPath) return alert("Chưa chọn File Nội dung cần đọc!");
@@ -833,6 +837,8 @@ const TTSTab = () => {
                 <div className="bg-[#1e222b] p-4 rounded border border-gray-700 shadow-md">
                     <h3 className="text-orange-500 font-bold text-sm mb-4 uppercase">GSPEECH SETTINGS</h3>
                     
+                    <PathInput label="GPT Model (.ckpt)" value={config.gptModel} onChange={v => setConfig({...config, gptModel: v})} isFile={true} filters={[{name: 'GPT Model', extensions:['ckpt']}]} />
+                    <PathInput label="SoVITS Model (.pth)" value={config.sovitsModel} onChange={v => setConfig({...config, sovitsModel: v})} isFile={true} filters={[{name: 'SoVITS Model', extensions:['pth']}]} />
                     <PathInput label="Reference Audio (WAV)" value={config.refAudio} onChange={v => setConfig({...config, refAudio: v})} isFile={true} filters={[{name: 'Audio', extensions:['wav']}]} />
                     
                     <div className="mb-3">

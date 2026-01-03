@@ -116,15 +116,26 @@ ipcMain.handle('updater:check', () => { if (!app.isPackaged) return; autoUpdater
 ipcMain.handle('updater:download', () => autoUpdater.downloadUpdate());
 ipcMain.handle('updater:install', () => { app.removeAllListeners("window-all-closed"); const w = BrowserWindow.getAllWindows(); w.forEach(win => win.destroy()); setImmediate(() => autoUpdater.quitAndInstall(true, true)); });
 
-ipcMain.handle('dialog:openDirectory', async () => (await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] })).filePaths[0] || null);
-ipcMain.handle('dialog:openFile', async (e, filters) => { 
+ipcMain.handle('dialog:openDirectory', async (e, defaultPath) => {
+    const options = { properties: ['openDirectory'] };
+    if (defaultPath && typeof defaultPath === 'string') options.defaultPath = defaultPath;
+    return (await dialog.showOpenDialog(mainWindow, options)).filePaths[0] || null;
+});
+
+ipcMain.handle('dialog:openFile', async (e, { filters, defaultPath }) => { 
     let f = [{ name: 'All Files', extensions: ['*'] }];
     if(filters) f = filters;
-    const r = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: f }); 
+    const options = { properties: ['openFile'], filters: f };
+    if (defaultPath && typeof defaultPath === 'string') options.defaultPath = defaultPath;
+    const r = await dialog.showOpenDialog(mainWindow, options); 
     return r.canceled ? null : r.filePaths[0]; 
 });
-ipcMain.handle('dialog:saveFile', async (e, options) => { 
-    const opts = options || { title: 'Save File', defaultPath: 'Output.mp4', filters: [{ name: 'Movies', extensions: ['mp4'] }] };
+ipcMain.handle('dialog:saveFile', async (e, { defaultPath, filters } = {}) => { 
+    const opts = { 
+        title: 'Save File', 
+        defaultPath: (defaultPath && typeof defaultPath === 'string') ? defaultPath : 'Output.mp4', 
+        filters: filters || [{ name: 'Movies', extensions: ['mp4'] }] 
+    };
     const r = await dialog.showSaveDialog(mainWindow, opts); 
     return r.canceled ? null : r.filePath; 
 });

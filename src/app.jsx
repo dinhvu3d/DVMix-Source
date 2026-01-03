@@ -445,19 +445,6 @@ const MixVideoTab = () => {
                         <button onClick={handleSelectOutput} className="bg-orange-700 hover:bg-orange-600 text-white text-xs px-3 py-2 rounded font-bold">Browse</button> 
                     </div> 
                 </div>
-                    <label className="block text-gray-500 text-xs font-bold mb-1 uppercase">Render Engine:</label> 
-                    <select 
-                        value={config.encoder || 'libx264'} 
-                        onChange={(e) => setConfig(prev => ({...prev, encoder: e.target.value}))} 
-                        className="w-full bg-[#2a2e3b] border border-gray-600 text-white rounded p-2 text-sm outline-none mb-3 font-bold"
-                    > 
-                        <option value="libx264">CPU (Stable)</option> 
-                        <option value="h264_nvenc">NVIDIA GPU</option> 
-                        <option value="h264_amf">AMD GPU</option> 
-                        <option value="h264_qsv">INTEL GPU</option> 
-                    </select> 
-                    
-                    <label className="block text-gray-500 text-xs font-bold mb-1 uppercase">Output File:</label>
 
                 <div className="bg-[#1e222b] p-3 rounded border border-gray-700 flex flex-col gap-2"> 
                     <div className="flex items-center justify-between pb-1 border-b border-gray-700 mb-1"> 
@@ -510,6 +497,16 @@ const MixVideoTab = () => {
                     </div> 
                     
                     <div className="flex gap-2">
+                        <select 
+                            value={config.encoder || 'libx264'} 
+                            onChange={(e) => setConfig(prev => ({...prev, encoder: e.target.value}))} 
+                            className="w-[140px] bg-[#2a2e3b] border border-gray-600 text-white rounded px-2 text-xs font-bold outline-none cursor-pointer"
+                        > 
+                            <option value="libx264">CPU (Stable)</option> 
+                            <option value="h264_nvenc">NVIDIA GPU</option> 
+                            <option value="h264_amf">AMD GPU</option> 
+                            <option value="h264_qsv">INTEL GPU</option> 
+                        </select> 
                         <button onClick={handleMergeAll} disabled={isProcessing} className="flex-1 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white py-3 rounded text-sm font-bold disabled:opacity-50 flex justify-center items-center gap-2 shadow-lg">
                             {isProcessing ? <Loader className="animate-spin" size={16}/> : <Repeat size={16}/>} {isProcessing ? "PROCESSING..." : "MERGE ALL"}
                         </button>
@@ -836,38 +833,38 @@ const TTSTab = () => {
                 <div className="bg-[#1e222b] p-4 rounded border border-gray-700 shadow-md">
                     <h3 className="text-orange-500 font-bold text-sm mb-4 uppercase">GSPEECH SETTINGS</h3>
                     
-                    <PathInput label="File Giọng Mẫu (WAV)" value={config.refAudio} onChange={v => setConfig({...config, refAudio: v})} isFile={true} filters={[{name: 'Audio', extensions:['wav']}]} />
+                    <PathInput label="Reference Audio (WAV)" value={config.refAudio} onChange={v => setConfig({...config, refAudio: v})} isFile={true} filters={[{name: 'Audio', extensions:['wav']}]} />
                     
                     <div className="mb-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Nội dung giọng mẫu (Prompt Text):</label>
+                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Reference Text (Prompt Text):</label>
                         <textarea value={config.refText} onChange={e => setConfig({...config, refText: e.target.value.replace(/[\r\n]+/g, ' ')})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 h-16 outline-none focus:border-orange-500 resize-none" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Ngôn ngữ mẫu:</label>
+                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Reference Language:</label>
                             <select value={config.refLang} onChange={e => setConfig({...config, refLang: e.target.value})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none cursor-pointer">
-                                <option value="vi">Tiếng Việt</option>
-                                <option value="en">Tiếng Anh</option>
-                                <option value="zh">Tiếng Trung</option>
-                                <option value="ja">Tiếng Nhật</option>
+                                <option value="vi">Vietnamese</option>
+                                <option value="en">English</option>
+                                <option value="zh">Chinese</option>
+                                <option value="ja">Japanese</option>
                             </select>
                         </div>
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Ngôn ngữ cần đọc:</label>
+                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Target Language:</label>
                             <select value={config.targetLang} onChange={e => setConfig({...config, targetLang: e.target.value})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none cursor-pointer">
-                                <option value="vi">Tiếng Việt</option>
-                                <option value="en">Tiếng Anh</option>
-                                <option value="zh">Tiếng Trung</option>
-                                <option value="ja">Tiếng Nhật</option>
+                                <option value="vi">Vietnamese</option>
+                                <option value="en">English</option>
+                                <option value="zh">Chinese</option>
+                                <option value="ja">Japanese</option>
                             </select>
                         </div>
                     </div>
 
-                    {/* Speed and Pitch controls */}
-                    <div className="grid grid-cols-2 gap-3 mt-3">
+                    {/* Speed, Pitch, and Pause controls in one row */}
+                    <div className="grid grid-cols-5 gap-2 mt-3">
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Speed:</label>
+                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono text-center">Speed</label>
                             <input 
                                 type="number" min="0.5" max="2.0" step="0.05"
                                 value={config.speed}
@@ -876,7 +873,7 @@ const TTSTab = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Pitch:</label>
+                            <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono text-center">Pitch</label>
                             <input 
                                 type="number" min="-0.5" max="0.5" step="0.01"
                                 value={config.pitch}
@@ -884,12 +881,8 @@ const TTSTab = () => {
                                 className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none focus:border-orange-500 font-bold text-center"
                             />
                         </div>
-                    </div>
-
-                    {/* Pause Duration Inputs */}
-                    <div className="mt-2 grid grid-cols-3 gap-3">
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1">Pause (,)</label>
+                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1 text-center">Pause (,)</label>
                             <input
                                 type="number" min="0" max="5" step="0.1"
                                 value={config.pauseComma}
@@ -898,7 +891,7 @@ const TTSTab = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1">Pause (.)</label>
+                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1 text-center">Pause (.)</label>
                             <input
                                 type="number" min="0" max="5" step="0.1"
                                 value={config.pausePeriod}
@@ -907,7 +900,7 @@ const TTSTab = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1">Pause (!/?)</label>
+                            <label className="block text-gray-500 text-[10px] font-bold uppercase font-mono mb-1 text-center">Pause (!/?)</label>
                             <input
                                 type="number" min="0" max="5" step="0.1"
                                 value={config.pauseExclamation}
@@ -920,23 +913,18 @@ const TTSTab = () => {
 
                 <div className="bg-[#1e222b] p-4 rounded border border-gray-700 shadow-md">
                     <h3 className="text-blue-400 font-bold text-sm mb-4 uppercase flex items-center gap-2"><Folder size={16}/> File & Output</h3>
-                    <PathInput label="Nội dung (.txt hoặc .srt)" value={config.inputPath} onChange={v => setConfig({...config, inputPath: v})} isFile={true} filters={[{name: 'Text/Sub', extensions:['txt', 'srt']}]} />
-                    <PathInput label="Thư mục lưu kết quả" value={config.outputFolder} onChange={v => setConfig({...config, outputFolder: v})} />
+                    <PathInput label="Input Content (.txt or .srt)" value={config.inputPath} onChange={v => setConfig({...config, inputPath: v})} isFile={true} filters={[{name: 'Text/Sub', extensions:['txt', 'srt']}]} />
+                    <PathInput label="Output Folder" value={config.outputFolder} onChange={v => setConfig({...config, outputFolder: v})} />
                     
                     <div className="mt-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Tên file xuất (Tùy chọn):</label>
+                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Output Filename (Optional):</label>
                         <div className="flex gap-2 items-center">
-                            <input type="text" value={config.outputFilename || ''} onChange={e => setConfig({...config, outputFilename: e.target.value})} className="flex-1 bg-[#15171e] border border-gray-600 text-white text-xs rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Mặc định: Tên_Input_tts" />
-                            <div className="bg-[#2a2e3b] border border-gray-600 text-gray-400 text-xs rounded px-3 py-2 font-bold">.{config.format}</div>
+                            <input type="text" value={config.outputFilename || ''} onChange={e => setConfig({...config, outputFilename: e.target.value})} className="flex-1 bg-[#15171e] border border-gray-600 text-white text-xs rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Default: [Input_Name]_tts" />
+                            <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="bg-[#2a2e3b] border border-gray-600 text-white text-xs rounded px-3 py-2 font-bold outline-none cursor-pointer">
+                                <option value="wav">.wav</option>
+                                <option value="mp3">.mp3</option>
+                            </select>
                         </div>
-                    </div>
-
-                    <div className="mt-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Định dạng xuất:</label>
-                        <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none">
-                            <option value="wav">WAV (Chất lượng gốc)</option>
-                            <option value="mp3">MP3 (Nén nhẹ)</option>
-                        </select>
                     </div>
                 </div>
             </div>
@@ -965,14 +953,14 @@ const TTSTab = () => {
                 <div className="bg-[#1e222b] p-5 rounded border border-gray-700 shadow-lg flex-1 flex flex-col overflow-hidden">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-700 pb-2">
                         <Mic className="text-orange-500" size={20} />
-                        <h3 className="font-bold text-gray-200 uppercase text-sm tracking-wider">Log hệ thống</h3>
+                        <h3 className="font-bold text-gray-200 uppercase text-sm tracking-wider">System Logs</h3>
                     </div>
 
                     {/* PROGRESS BAR */}
                     {isRunning && (
                         <div className="mb-4">
                             <div className="flex justify-between text-[10px] text-gray-400 mb-1 font-bold">
-                                <span className="uppercase text-blue-400">Đang xử lý TTS...</span>
+                                <span className="uppercase text-blue-400">Processing TTS...</span>
                                 <span>{progress}%</span>
                             </div>
                             <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden border border-gray-600">
@@ -984,7 +972,7 @@ const TTSTab = () => {
                     {/* Ô LOG (Làm ngắn lại nhờ flex-1) */}
                     <div className="bg-[#15171e] flex-1 rounded border border-gray-700 p-2 font-mono text-[10px] text-gray-400 relative overflow-hidden">
                         <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-2">
-                            {logs.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 italic">Sẵn sàng xử lý dữ liệu...</div> : logs.map((l, i) => <div key={i} className="mb-1 border-b border-gray-800/50 pb-1">{l}</div>)}
+                            {logs.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 italic">Ready to process...</div> : logs.map((l, i) => <div key={i} className="mb-1 border-b border-gray-800/50 pb-1">{l}</div>)}
                         </div>
                     </div>
 
@@ -1227,23 +1215,18 @@ const JPVoiceTab = () => {
 
                 <div className="bg-[#1e222b] p-4 rounded border border-gray-700 shadow-md">
                     <h3 className="text-blue-400 font-bold text-sm mb-4 uppercase flex items-center gap-2"><Folder size={16}/> File & Output</h3>
-                    <PathInput label="Nội dung (.txt hoặc .srt)" value={config.inputPath} onChange={v => setConfig({...config, inputPath: v})} isFile={true} filters={[{name: 'Text/Sub', extensions:['txt', 'srt']}]} />
-                    <PathInput label="Thư mục lưu kết quả" value={config.outputFolder} onChange={v => setConfig({...config, outputFolder: v})} />
+                    <PathInput label="Input Content (.txt or .srt)" value={config.inputPath} onChange={v => setConfig({...config, inputPath: v})} isFile={true} filters={[{name: 'Text/Sub', extensions:['txt', 'srt']}]} />
+                    <PathInput label="Output Folder" value={config.outputFolder} onChange={v => setConfig({...config, outputFolder: v})} />
                     
                     <div className="mt-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Tên file xuất (Tùy chọn):</label>
+                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Output Filename (Optional):</label>
                         <div className="flex gap-2 items-center">
-                            <input type="text" value={config.outputFilename || ''} onChange={e => setConfig({...config, outputFilename: e.target.value})} className="flex-1 bg-[#15171e] border border-gray-600 text-white text-xs rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Mặc định: Tên_Input_tts" />
-                            <div className="bg-[#2a2e3b] border border-gray-600 text-gray-400 text-xs rounded px-3 py-2 font-bold">.{config.format}</div>
+                            <input type="text" value={config.outputFilename || ''} onChange={e => setConfig({...config, outputFilename: e.target.value})} className="flex-1 bg-[#15171e] border border-gray-600 text-white text-xs rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Default: [Input_Name]_tts" />
+                            <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="bg-[#2a2e3b] border border-gray-600 text-white text-xs rounded px-3 py-2 font-bold outline-none cursor-pointer">
+                                <option value="wav">.wav</option>
+                                <option value="mp3">.mp3</option>
+                            </select>
                         </div>
-                    </div>
-
-                    <div className="mt-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Định dạng xuất:</label>
-                        <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none">
-                            <option value="wav">WAV (Chất lượng gốc)</option>
-                            <option value="mp3">MP3 (Nén nhẹ)</option>
-                        </select>
                     </div>
                 </div>
             </div>
@@ -1253,13 +1236,13 @@ const JPVoiceTab = () => {
                 <div className="bg-[#1e222b] p-5 rounded border border-gray-700 shadow-lg flex-1 flex flex-col overflow-hidden">
                     <div className="flex items-center gap-2 mb-4 border-b border-gray-700 pb-2">
                         <Mic className="text-orange-500" size={20} />
-                        <h3 className="font-bold text-gray-200 uppercase text-sm tracking-wider">Log hệ thống</h3>
+                        <h3 className="font-bold text-gray-200 uppercase text-sm tracking-wider">System Logs</h3>
                     </div>
 
                     {isProcessing && (
                         <div className="mb-4">
                             <div className="flex justify-between text-[10px] text-gray-400 mb-1 font-bold">
-                                <span className="uppercase text-blue-400">Đang xử lý TTS...</span>
+                                <span className="uppercase text-blue-400">Processing TTS...</span>
                                 <span>{progress}%</span>
                             </div>
                             <div className="w-full bg-gray-700 h-2 rounded-full overflow-hidden border border-gray-600">
@@ -1270,7 +1253,7 @@ const JPVoiceTab = () => {
 
                     <div className="bg-[#15171e] flex-1 rounded border border-gray-700 p-2 font-mono text-[10px] text-gray-400 relative overflow-hidden">
                         <div className="absolute inset-0 overflow-y-auto custom-scrollbar p-2">
-                            {logs.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 italic">Sẵn sàng...</div> : logs.map((l, i) => <div key={i} className="mb-1 border-b border-gray-800/50 pb-1">{l}</div>)}
+                            {logs.length === 0 ? <div className="h-full flex items-center justify-center text-gray-600 italic">Ready...</div> : logs.map((l, i) => <div key={i} className="mb-1 border-b border-gray-800/50 pb-1">{l}</div>)}
                         </div>
                     </div>
 
@@ -1410,15 +1393,11 @@ const FSpeechTab = () => {
                         <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Output Filename (Optional):</label>
                         <div className="flex gap-2 items-center">
                             <input type="text" value={config.outputFilename || ''} onChange={e => setConfig({...config, outputFilename: e.target.value})} className="flex-1 bg-[#15171e] border border-gray-600 text-white text-xs rounded px-3 py-2 outline-none focus:border-orange-500" placeholder="Default: [Input_Name]_fspeech" />
-                            <div className="bg-[#2a2e3b] border border-gray-600 text-gray-400 text-xs rounded px-3 py-2 font-bold">.{config.format}</div>
+                            <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="bg-[#2a2e3b] border border-gray-600 text-white text-xs rounded px-3 py-2 font-bold outline-none cursor-pointer">
+                                <option value="wav">.wav</option>
+                                <option value="mp3">.mp3</option>
+                            </select>
                         </div>
-                    </div>
-                    <div className="mt-3">
-                        <label className="block text-gray-500 text-[10px] font-bold mb-1 uppercase font-mono">Output Format:</label>
-                        <select value={config.format} onChange={e => setConfig({...config, format: e.target.value})} className="w-full bg-[#15171e] border border-gray-600 text-white text-xs rounded p-2 outline-none">
-                            <option value="wav">WAV (Original Quality)</option>
-                            <option value="mp3">MP3 (Compressed)</option>
-                        </select>
                     </div>
                 </div>
             </div>

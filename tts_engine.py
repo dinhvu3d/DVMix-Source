@@ -97,6 +97,36 @@ def apply_pitch_shift(file_path, pitch_octaves, electron_log_func):
     except Exception as e:
         electron_log_func(f"WARN: Could not apply pitch shift: {e}")
 
+def apply_speed_change(file_path, speed):
+    """
+    Thay đổi tốc độ (Tempo) của file audio bằng FFmpeg atempo filter.
+    Giữ nguyên cao độ (Pitch).
+    """
+    if abs(speed - 1.0) < 0.01:
+        return
+
+    temp_path = file_path + ".speed.wav"
+    # FFmpeg atempo hỗ trợ 0.5 đến 2.0. UI đã giới hạn range này.
+    cmd = [
+        "ffmpeg", "-y", "-i", file_path,
+        "-filter:a", f"atempo={speed}",
+        "-vn", temp_path
+    ]
+    
+    try:
+        startupinfo = None
+        if os.name == 'nt':
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        subprocess.check_call(cmd, startupinfo=startupinfo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(temp_path):
+            shutil.move(temp_path, file_path)
+    except Exception as e:
+        print(f"Lỗi khi thay đổi tốc độ: {e}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 # --- LOGIC XỬ LÝ (VOICEVOX) ---
 class VoicevoxLogic:
     def __init__(self, api_url="http://127.0.0.1:50021", engine_path=None):
@@ -374,14 +404,6 @@ class DVMakerLogic:
         except:
             return False
 
-    def set_models(self, gpt_path, sovits_path):
-        try:
-            # Gọi API để cập nhật weights cho GPT và SoVITS
-            requests.get(f"{self.api_url}/set_gpt_weights", params={"weights_path": gpt_path}, timeout=30)
-            requests.get(f"{self.api_url}/set_sovits_weights", params={"weights_path": sovits_path}, timeout=30)
-        except Exception as e:
-            raise Exception(f"Lỗi khi đổi Model: {e}")
-
     def tts_request(self, text, ref_audio, ref_text, ref_lang, target_lang, speed=1.0):
         """
         Gửi lệnh đọc tới GPT-SoVITS.
@@ -447,13 +469,17 @@ class DVMakerLogic:
 
             try:
                 # Gọi API lấy giọng đọc
-                audio_data = self.tts_request(text, ref_audio, ref_text, ref_lang, target_lang, speed=speed)
+                # Luôn gửi speed=1.0 tới API và xử lý speed thủ công bằng FFmpeg
+                audio_data = self.tts_request(text, ref_audio, ref_text, ref_lang, target_lang, speed=1.0)
                 
                 # Lưu tạm
                 temp_file = f"temp_{i}.wav"
                 with open(temp_file, "wb") as f:
                     f.write(audio_data)
                 
+                # Xử lý Speed (Tempo)
+                apply_speed_change(temp_file, speed)
+
                 # Đọc file tạm và chèn vào đúng vị trí timecode
                 segment = AudioSegment.from_wav(temp_file)
                 os.remove(temp_file)
@@ -533,12 +559,16 @@ class DVMakerLogic:
                 continue
 
             try:
-                audio_data = self.tts_request(sentence, ref_audio, ref_text, ref_lang, target_lang, speed=speed)
+                # Luôn gửi speed=1.0 tới API và xử lý speed thủ công bằng FFmpeg
+                audio_data = self.tts_request(sentence, ref_audio, ref_text, ref_lang, target_lang, speed=1.0)
                 
                 # Lưu file audio thô vào đúng đường dẫn segment
                 with open(filepath, "wb") as f:
                     f.write(audio_data)
                 
+                # Xử lý Speed (Tempo) trước khi load vào AudioSegment
+                apply_speed_change(filepath, speed)
+
                 sound = AudioSegment.from_wav(filepath)
                 
                 # Áp dụng Pitch
@@ -1173,11 +1203,6 @@ if __name__ == "__main__":
                 logic = DVMakerLogic(params['apiUrl'])
                 speed = params.get('speed', 1.0)
                 pitch = params.get('pitch', 0.0)
-                
-                # Cập nhật Model nếu có tham số truyền vào
-                if params.get('gptModel') and params.get('sovitsModel'):
-                    electron_log(f"Đang chuyển đổi Model...")
-                    logic.set_models(params['gptModel'], params['sovitsModel'])
                 
                 # Lấy cấu hình pause
                 pause_config = {

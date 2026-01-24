@@ -502,14 +502,10 @@ class DVMakerLogic:
         with open(txt_path, 'r', encoding='utf-8') as f:
             text = f.read()
 
-        # Thêm khoảng trắng sau dấu phẩy nếu thiếu (chỉ áp dụng cho ngôn ngữ không phải tiếng Nhật/Trung)
-        if target_lang not in ['ja', 'zh']:
-            text = re.sub(r',(\S)', r', \1', text)
-            text = re.sub(r'、(\S)', r'、 \1', text)
-
-        # Tách câu dựa trên dấu câu phổ biến (Việt/Anh/Trung/Nhật), không ngắt ở dấu phẩy
+        # Tách câu dựa trên dấu câu phổ biến (Việt/Anh/Trung/Nhật).
+        # Chỉ ngắt câu ở . ? ! nếu theo sau là khoảng trắng (để giữ 3.5, 12:30 liền mạch).
         # Giữ lại dấu câu để kiểm tra logic pause
-        sentences = [s.strip() for s in re.split(r'(?<=[.?!。！？\n])', text) if s.strip()]
+        sentences = [s.strip() for s in re.split(r'(?<=[.?!])(?=\s)|(?<=[。！？])|(?<=\n)', text) if s.strip()]
 
         # Create segments directory
         segments_dir = os.path.splitext(output_path)[0] + "_segments"

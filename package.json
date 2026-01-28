@@ -3,13 +3,25 @@
   "version": "1.0.6",
   "description": "Video Automation Tool AV1",
   "main": "electron/main.js",
+  
+  "// --- 1. KHAI BÁO KHO CHỨA PUBLIC (MỚI THÊM) ---": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dinhvu3d/DVMix-Public.git"
+  },
+
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on tcp:3000 && electron .\"",
     "electron:build": "npm run build && electron-builder",
     "start": "npm run electron:dev",
-    "dist": "npm run electron:build"
+    "dist": "npm run electron:build",
+    "preview": "vite preview",
+    "// --- BẢO MẬT ---": "",
+    "protect": "node obfuscate_tool.js",
+    "restore": "node obfuscate_tool.js restore",
+    "build:secure": "npm run protect && npm run dist && npm run restore"
   },
   "author": "DVMedia",
   "license": "ISC",
@@ -28,6 +40,7 @@
     "concurrently": "^8.2.2",
     "electron": "^29.1.0",
     "electron-builder": "^24.13.3",
+    "javascript-obfuscator": "^5.2.1",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "vite": "^5.1.4",
@@ -43,11 +56,11 @@
     ],
     "extraResources": [
       "./ffmpeg.exe",
-      "./ffprobe.exe", 
-      "./dedup_engine.py",
-      "./text_renderer.py",
-      "./sync_engine.py",
-      "./tts_engine.py"
+      "./ffprobe.exe",
+      "./dedup_engine.exe",
+      "./text_renderer.exe",
+      "./sync_engine.exe",
+      "./tts_engine.exe"
     ],
     "directories": {
       "buildResources": "build",
@@ -65,12 +78,15 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "DVMix",
-      "artifactName": "${productName} Setup ${version}.${ext}" 
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "dinhvu3d",
-      "repo": "dvmedia-tool"
-    }
+    
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dinhvu3d",
+        "repo": "DVMix-Public"
+      }
+    ]
   }
 }

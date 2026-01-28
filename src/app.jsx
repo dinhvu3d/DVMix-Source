@@ -854,6 +854,7 @@ const TTSTab = () => {
                                 <option value="en">English</option>
                                 <option value="zh">Chinese</option>
                                 <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
                             </select>
                         </div>
                         <div>
@@ -863,6 +864,7 @@ const TTSTab = () => {
                                 <option value="en">English</option>
                                 <option value="zh">Chinese</option>
                                 <option value="ja">Japanese</option>
+                                <option value="ko">Korean</option>
                             </select>
                         </div>
                     </div>

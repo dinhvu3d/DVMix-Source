@@ -5,7 +5,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { autoUpdater } = require('electron-updater');
 const fluentFfmpeg = require('fluent-ffmpeg');
-const { spawn, exec } = require('child_process');
+const { spawn, exec, execSync } = require('child_process');
 const http = require('http');
 
 // ==========================================
@@ -33,7 +33,22 @@ const ffprobePath = require('ffprobe-static').path.replace('app.asar', 'app.asar
 fluentFfmpeg.setFfmpegPath(ffmpegPath);
 fluentFfmpeg.setFfprobePath(ffprobePath);
 
-const SECRET_SALT = "DVMEDIA_TOOL_2025_SECRET_KEY_@123"; 
+// ==========================================
+// CẤU HÌNH RSA (BẢO MẬT CAO)
+// Thay thế SECRET_SALT bằng PUBLIC_KEY.
+// Private Key bạn giữ bí mật để tạo License Key (Sign).
+// Public Key này dùng để Verify trên máy khách.
+// ==========================================
+const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArJihxT0reZCM5JKnOS4X
+If/ET65cxQP5/gJ0UUSPfNTeJpzzqjoU/aEFjIF8cPfhC4yUZtkPPGHerl7zcwx0
+6TJiyRtfgeRFRjzQbaajsQW1R5wEpNXk+haehcenVGO3FjXEDcsIlBiaeBrOou1Y
+vr/05UbdVS/AtqRIb1s4Pdyqgfo0it9l+rZbD03RExasw0yx/T2B9orUttEBcY2W
+awx1zKX1cYwh1cJoEU0rmMFJ6j5TNVIGq+1xsqQ7S4xauVitbUt3bfypZ4fQhpRA
+mYnhDfyga5idCZU5jmTqlJxZEM7iPfz9RoDWJRPFFwnKInU+Nww4VAZz+HCXm4NN
+CwIDAQAB
+-----END PUBLIC KEY-----`;
+
 const LICENSE_FILE = path.join(app.getPath('userData'), 'license.json');
 
 // ==========================================
@@ -45,9 +60,14 @@ const getMachineId = () => {
         return crypto.createHash('md5').update(rawId).digest('hex').toUpperCase().substring(0, 16);
     } catch (e) { return "UNKNOWN-DEVICE-ID"; }
 };
-const generateActivationKey = (id) => {
-    const hash = crypto.createHash('sha256').update(id + SECRET_SALT).digest('hex').toUpperCase();
-    return hash.substring(0, 24).match(/.{1,4}/g).join('-');
+
+// Hàm xác thực chữ ký RSA (Thay thế cho generateActivationKey)
+const _startSystemCheck = (machineId, licenseKey) => {
+    try {
+        // licenseKey là chữ ký số (Base64) do Admin tạo ra từ machineId bằng Private Key
+        const signature = Buffer.from(licenseKey, 'base64');
+        return crypto.verify('SHA256', Buffer.from(machineId), PUBLIC_KEY, signature);
+    } catch (e) { return false; }
 };
 const sendLog = (msg) => { if(mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('system-log', msg); };
 const sendDedupProgress = (data) => { if(mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('dedup-progress', data); };
@@ -100,16 +120,26 @@ ipcMain.handle('license:check', async () => {
     try {
         if (!fs.existsSync(LICENSE_FILE)) return { activated: false };
         const data = JSON.parse(fs.readFileSync(LICENSE_FILE, 'utf-8'));
-        if (data.key === generateActivationKey(getMachineId())) return { activated: true };
+        
+        // 1. Kiểm tra Machine ID có khớp với máy hiện tại không (chống copy file license sang máy khác)
+        if (data.machineId !== getMachineId()) return { activated: false };
+        
+        // 2. Xác thực chữ ký RSA (chống sửa đổi nội dung file license)
+        if (_startSystemCheck(data.machineId, data.key)) return { activated: true };
+        
         return { activated: false };
     } catch { return { activated: false }; }
 });
 ipcMain.handle('license:activate', async (e, k) => {
-    if (k.trim().toUpperCase() === generateActivationKey(getMachineId())) {
-        fs.writeFileSync(LICENSE_FILE, JSON.stringify({ key: k.trim().toUpperCase(), machineId: getMachineId() }));
+    const machineId = getMachineId();
+    const inputKey = k.trim();
+    
+    // Xác thực key người dùng nhập vào (Key này phải là chữ ký RSA của machineId)
+    if (_startSystemCheck(machineId, inputKey)) {
+        fs.writeFileSync(LICENSE_FILE, JSON.stringify({ key: inputKey, machineId: machineId }));
         return { success: true };
     }
-    return { success: false, message: "Invalid Key" };
+    return { success: false, message: "Invalid License Key (RSA Check Failed)" };
 });
 ipcMain.handle('license:getMachineId', () => getMachineId());
 ipcMain.handle('updater:check', () => { if (!app.isPackaged) return; autoUpdater.checkForUpdates(); });
@@ -248,7 +278,7 @@ ipcMain.handle('backend:startDedup', async (event, { folderPath }) => {
     if (!fs.existsSync(folderPath)) return { success: false, message: "Folder not found" };
     
     // FIX PATH: Tìm đúng file dedup_engine.py trong folder resources
-    let scriptPath = resolveResource('dedup_engine.py');
+    let scriptPath = resolveResource('dedup_engine.exe');
 
     if (!fs.existsSync(scriptPath)) {
         sendLog(`[ERR] Engine not found at: ${scriptPath}`);
@@ -261,7 +291,7 @@ ipcMain.handle('backend:startDedup', async (event, { folderPath }) => {
         let isResolved = false;
         const pythonEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' };
 
-        dedupProcess = spawn('python', ['-u', scriptPath, folderPath, ffmpegPath], { env: pythonEnv });
+        dedupProcess = spawn(scriptPath, [folderPath, ffmpegPath], { env: pythonEnv });
         
         dedupProcess.stdout.on('data', (data) => {
             const lines = data.toString().split('\n');
@@ -400,14 +430,14 @@ ipcMain.handle('backend:merge', async (e, { inputDirs, outputFile, config, overl
             for (const f of priorityFonts) { if (f && fs.existsSync(f)) { finalFont = f; break; } }
             overlayConfig.fontPath = finalFont;
 
-            const scriptPath = resolveResource('text_renderer.py');
+            const scriptPath = resolveResource('text_renderer.exe');
             overlayPngPath = path.join(workDir, 'overlay.png');
             const pyPayload = { ...overlayConfig, width: parseInt(targetW), height: parseInt(targetH), position: isVerticalOutput ? 'top_right' : 'default' };
             
             await new Promise((resolve) => {
                 if (!fs.existsSync(scriptPath)) { resolve(); return; }
                 const pyEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' };
-                const py = spawn('python', [scriptPath, JSON.stringify(pyPayload), overlayPngPath], { env: pyEnv });
+                const py = spawn(scriptPath, [JSON.stringify(pyPayload), overlayPngPath], { env: pyEnv });
                 py.on('close', resolve);
                 py.on('error', () => { overlayPngPath = null; resolve(); });
             });
@@ -540,8 +570,8 @@ ipcMain.handle('backend:analyzeSync', async (e, { videoPath, audioPath, srtPath 
         ensureDir(tempDir);
 
         // FIX PATH: Tìm file sync_engine.py
-        const scriptPath = resolveResource('sync_engine.py');
-        if (!fs.existsSync(scriptPath)) return { success: false, message: "Engine sync_engine.py not found!" };
+        const scriptPath = resolveResource('sync_engine.exe');
+        if (!fs.existsSync(scriptPath)) return { success: false, message: "Engine sync_engine.exe not found!" };
 
         sendLog(`[SYNC] Starting analysis...`);
         
@@ -550,7 +580,7 @@ ipcMain.handle('backend:analyzeSync', async (e, { videoPath, audioPath, srtPath 
             const pythonEnv = { ...process.env, PYTHONIOENCODING: 'utf-8' };
 
             // Gọi Python: script video audio srt temp_dir ffmpeg_path
-            syncProcess = spawn('python', ['-u', scriptPath, videoPath, audioPath, srtPath, tempDir, ffmpegPath], { env: pythonEnv });
+            syncProcess = spawn(scriptPath, [videoPath, audioPath, srtPath, tempDir, ffmpegPath], { env: pythonEnv });
 
             syncProcess.stdout.on('data', (data) => {
                 const lines = data.toString().split('\n');
@@ -616,7 +646,10 @@ ipcMain.handle('tts:checkConnection', async (e, url) => {
 ipcMain.handle('jp-voice:stop-tts', async () => {
     if (ttsRunProcess) {
         try {
-            ttsRunProcess.kill();
+            // FIX: Dùng execSync + taskkill để buộc dừng process tree trên Windows
+            if (process.platform === 'win32') {
+                try { execSync(`taskkill /pid ${ttsRunProcess.pid} /f /t`); } catch(e) {}
+            } else ttsRunProcess.kill();
         } finally {
             ttsRunProcess = null;
         }
@@ -932,9 +965,9 @@ ipcMain.handle('tts:startServer', async (event, { pythonPath, apiScriptPath }) =
 ipcMain.handle('tts:stopServer', async () => {
     if (ttsServerProcess) {
         try {
-            // Dùng taskkill trên Windows để đảm bảo kill sạch cả process con (Tree)
+            // FIX: Thay exec bằng execSync để đảm bảo server chết hẳn mới chạy tiếp
             if (process.platform === 'win32') {
-                exec(`taskkill /pid ${ttsServerProcess.pid} /f /t`);
+                try { execSync(`taskkill /pid ${ttsServerProcess.pid} /f /t`); } catch(e) {}
             } else {
                 ttsServerProcess.kill();
             }
@@ -947,8 +980,8 @@ ipcMain.handle('tts:stopServer', async () => {
 
 // 3. Handler chính chạy TTS (GPT-SoVITS)
 ipcMain.handle('backend:startTTS', async (event, config) => {
-    const scriptPath = resolveResource('tts_engine.py');
-    if (!fs.existsSync(scriptPath)) return { success: false, message: "Không thấy tts_engine.py" };
+    const scriptPath = resolveResource('tts_engine.exe');
+    if (!fs.existsSync(scriptPath)) return { success: false, message: "Không thấy tts_engine.exe" };
 
     return new Promise((resolve) => {
         let isResolved = false;
@@ -962,7 +995,7 @@ ipcMain.handle('backend:startTTS', async (event, config) => {
         };
         
         // Khởi chạy engine xử lý
-        ttsRunProcess = spawn('python', ['-u', scriptPath, JSON.stringify(config)], { env: pythonEnv });
+        ttsRunProcess = spawn(scriptPath, [JSON.stringify(config)], { env: pythonEnv });
 
         ttsRunProcess.stdout.on('data', (data) => {
             const lines = data.toString().split('\n');
@@ -1041,7 +1074,7 @@ ipcMain.handle('fspeech:start-server', async (e, { pythonPath, rootPath, llamaPa
 ipcMain.handle('fspeech:stop-server', async () => {
     if (fishServerProcess) {
         try {
-            if (process.platform === 'win32') exec(`taskkill /pid ${fishServerProcess.pid} /f /t`);
+            if (process.platform === 'win32') { try { execSync(`taskkill /pid ${fishServerProcess.pid} /f /t`); } catch(e) {} }
             else fishServerProcess.kill();
             fishServerProcess = null;
             sendLog('[FSPEECH] Server stopped.');
@@ -1051,7 +1084,7 @@ ipcMain.handle('fspeech:stop-server', async () => {
 });
 
 ipcMain.handle('fspeech:generate', async (e, config) => {
-    const scriptPath = resolveResource('tts_engine.py');
+    const scriptPath = resolveResource('tts_engine.exe');
     if (!fs.existsSync(scriptPath)) return { success: false, message: "Engine script not found." };
 
     return new Promise((resolve) => {
@@ -1062,7 +1095,7 @@ ipcMain.handle('fspeech:generate', async (e, config) => {
         pythonEnv.PATH = `${process.env.PATH}${path.delimiter}${resourceDir}`;
 
         const pyConfig = { ...config, task: 'fish-speech' };
-        fishTtsProcess = spawn('python', ['-u', scriptPath, JSON.stringify(pyConfig)], { env: pythonEnv });
+        fishTtsProcess = spawn(scriptPath, [JSON.stringify(pyConfig)], { env: pythonEnv });
 
         fishTtsProcess.stdout.on('data', (data) => {
             const lines = data.toString().split('\n');
@@ -1098,7 +1131,9 @@ ipcMain.handle('fspeech:generate', async (e, config) => {
 ipcMain.handle('fspeech:stop-tts', async () => {
     if (fishTtsProcess) {
         try {
-            fishTtsProcess.kill();
+            if (process.platform === 'win32') {
+                try { execSync(`taskkill /pid ${fishTtsProcess.pid} /f /t`); } catch(e) {}
+            } else fishTtsProcess.kill();
         } finally {
             fishTtsProcess = null;
         }
@@ -1147,9 +1182,8 @@ ipcMain.handle('jp-voice:stop-engine', async () => {
 
     if (voicevoxProcess) {
         try {
-            // Dùng taskkill trên Windows để đảm bảo kill sạch cả process con (Tree)
             if (process.platform === 'win32') {
-                exec(`taskkill /pid ${voicevoxProcess.pid} /f /t`);
+                try { execSync(`taskkill /pid ${voicevoxProcess.pid} /f /t`); } catch(e) {}
             } else {
                 voicevoxProcess.kill();
             }
@@ -1185,8 +1219,8 @@ ipcMain.handle('jp-voice:get-speakers', async () => {
 });
 
 ipcMain.handle('jp-voice:run-tts', async (event, config) => {
-    const scriptPath = resolveResource('tts_engine.py');
-    if (!fs.existsSync(scriptPath)) return { success: false, message: "Không thấy tts_engine.py" };
+    const scriptPath = resolveResource('tts_engine.exe');
+    if (!fs.existsSync(scriptPath)) return { success: false, message: "Không thấy tts_engine.exe" };
     if (ttsRunProcess) return { success: false, message: "Một tác vụ TTS khác đang chạy." };
     return new Promise((resolve) => {
         let isResolved = false;
@@ -1195,7 +1229,7 @@ ipcMain.handle('jp-voice:run-tts', async (event, config) => {
         
         // Add a 'task' parameter to distinguish from the other TTS task
         const pyConfig = {...config, task: 'jp-voice'};
-        ttsRunProcess = spawn('python', ['-u', scriptPath, JSON.stringify(pyConfig)], { env: pythonEnv });
+        ttsRunProcess = spawn(scriptPath, [JSON.stringify(pyConfig)], { env: pythonEnv });
 
         ttsRunProcess.stdout.on('data', (data) => {
             const lines = data.toString().split('\n');

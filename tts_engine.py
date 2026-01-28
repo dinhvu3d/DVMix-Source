@@ -810,11 +810,11 @@ class DVMakerApp(ctk.CTk):
         ctk.CTkLabel(frame_left, text="Ngôn ngữ mẫu / Ngôn ngữ cần đọc:").pack(anchor="w")
         lang_frame = ctk.CTkFrame(frame_left, fg_color="transparent")
         lang_frame.pack(fill="x")
-        self.combo_ref_lang = ctk.CTkComboBox(lang_frame, values=["vi", "en", "zh", "ja"], width=100)
+        self.combo_ref_lang = ctk.CTkComboBox(lang_frame, values=["vi", "en", "zh", "ja", "ko"], width=100)
         self.combo_ref_lang.set(self.config["ref_lang"])
         self.combo_ref_lang.pack(side="left", padx=(0, 10))
         
-        self.combo_target_lang = ctk.CTkComboBox(lang_frame, values=["vi", "en", "zh", "ja"], width=100)
+        self.combo_target_lang = ctk.CTkComboBox(lang_frame, values=["vi", "en", "zh", "ja", "ko"], width=100)
         self.combo_target_lang.set(self.config["target_lang"])
         self.combo_target_lang.pack(side="left")
 

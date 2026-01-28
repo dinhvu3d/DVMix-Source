@@ -7,3 +7,5 @@ ffprobe.exe
 .venv/
 *.lib
 *.dll
+*.pem
+admin_tool.js
